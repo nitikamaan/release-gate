@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: TDS identity: 24f3003527@ds.study.iitm.ac.in
         run: echo "TDS identity verified"
 
@@ -65,12 +66,11 @@ jobs:
 
           response = client.post("/release-gate", json=payload)
 
+          print(response.json())
+
           assert response.status_code == 200
-
-          result = response.json()
-
-          assert result["decision"] == "promote"
-          assert result["violations"] == []
+          assert response.json()["decision"] == "promote"
+          assert response.json()["violations"] == []
 
           print("Release gate test passed")
           PY

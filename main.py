@@ -1,90 +1,82 @@
 from fastapi import FastAPI
-from typing import Any
 
 app = FastAPI()
 
 
 @app.post("/release-gate")
-def release_gate(data: dict[str, Any]):
+def release_gate(data: dict):
 
     violations = []
 
     workflow = data["workflow"]
     image = data["image"]
 
-    # 1. Permissions
-    required_permissions = {
+    # Permissions
+    if workflow.get("permissions") != {
         "contents": "read",
         "packages": "write",
         "id-token": "none"
-    }
-
-    if workflow.get("permissions") != required_permissions:
+    }:
         violations.append("EXCESS_PERMISSION")
 
-    # 2. Pull request trigger
-    if data["event"] == "pull_request":
-        if workflow["trigger"] != "pull_request":
+    # Pull request rules
+    if data.get("event") == "pull_request":
+
+        if workflow.get("trigger") != "pull_request":
             violations.append("UNSAFE_PR_TRIGGER")
 
-        if not workflow["testsPassed"]:
+        if (
+            workflow.get("testsPassed") is not True
+            or workflow.get("matrixComplete") is not True
+            or workflow.get("failFast") is not False
+        ):
             violations.append("TESTS_INCOMPLETE")
 
-        if not workflow["matrixComplete"]:
-            if "TESTS_INCOMPLETE" not in violations:
-                violations.append("TESTS_INCOMPLETE")
+    # Action pinning
+    for action in workflow.get("actions", []):
 
-        if workflow["failFast"] is not False:
-            if "TESTS_INCOMPLETE" not in violations:
-                violations.append("TESTS_INCOMPLETE")
+        if action.get("owner") != "actions":
 
-    # 3. Action pinning
-    for action in workflow["actions"]:
-        if action["owner"] != "actions":
-            ref = action["ref"]
+            ref = action.get("ref", "")
 
             if not (
                 len(ref) == 40
                 and all(c in "0123456789abcdef" for c in ref)
             ):
                 violations.append("MUTABLE_ACTION")
-                break
 
-    # 4. Image checks
-    if not image["multiStage"]:
+    # Image rules
+    if image.get("multiStage") is not True:
         violations.append("SINGLE_STAGE_IMAGE")
 
-    if image["runsAsRoot"]:
+    if image.get("runsAsRoot") is not False:
         violations.append("ROOT_RUNTIME")
 
-    if image["secretMode"] in ["arg", "copy"]:
+    if image.get("secretMode") in ["arg", "copy"]:
         violations.append("SECRET_IN_LAYER")
 
-    if image["criticalVulnerabilities"] != 0:
+    if image.get("criticalVulnerabilities") != 0:
         violations.append("CRITICAL_CVE")
 
-    if not image["digestPinned"]:
+    if image.get("digestPinned") is not True:
         violations.append("UNPINNED_IMAGE")
 
-    # 5. Production checks
-    if data["target"] == "production":
+    # Production rules
+    if data.get("target") == "production":
 
         if (
-            data["event"] != "push"
-            or workflow["trigger"] != "push"
-            or data["ref"] != "refs/heads/main"
+            data.get("event") != "push"
+            or workflow.get("trigger") != "push"
+            or data.get("ref") != "refs/heads/main"
         ):
             violations.append("INVALID_PRODUCTION_REF")
 
         if workflow.get("environmentApproval") is not True:
             violations.append("APPROVAL_REQUIRED")
 
-    # Remove duplicate violations
     violations = list(dict.fromkeys(violations))
 
-    decision = "promote" if len(violations) == 0 else "block"
-
     return {
-        "decision": decision,
+        "decision": "promote" if not violations else "block",
         "violations": violations
     }
