@@ -1,94 +1,59 @@
-const REQUIRED_PERMISSIONS = {
-  contents: "read",
-  packages: "write",
-  "id-token": "none"
-};
-
-const SHA_REGEX = /^[0-9a-f]{40}$/;
-
-function response(decision, violations) {
-  return new Response(
-    JSON.stringify({
-      decision,
-      violations
-    }),
-    {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json"
-      }
-    }
-  );
-}
-
 function isObject(value) {
   return value !== null &&
     typeof value === "object" &&
     !Array.isArray(value);
 }
 
-function checkPermissions(workflow) {
+function checkPermissions(workflow, violations) {
   const permissions = workflow.permissions;
 
   if (!isObject(permissions)) {
-    return "EXCESS_PERMISSION";
+    violations.push("EXCESS_PERMISSION");
+    return;
   }
 
   const keys = Object.keys(permissions);
 
-  if (keys.length !== 3) {
-    return "EXCESS_PERMISSION";
-  }
-
   if (
+    keys.length !== 3 ||
     permissions.contents !== "read" ||
     permissions.packages !== "write" ||
     permissions["id-token"] !== "none"
   ) {
-    return "EXCESS_PERMISSION";
+    violations.push("EXCESS_PERMISSION");
   }
-
-  return null;
 }
 
-function checkPullRequest(body) {
+function checkPullRequest(body, violations) {
   if (body.event === "pull_request") {
     if (body.workflow.trigger !== "pull_request") {
-      return "UNSAFE_PR_TRIGGER";
-    }
-
-    if (
-      body.workflow.testsPassed !== true ||
-      body.workflow.matrixComplete !== true ||
-      body.workflow.failFast !== false
-    ) {
-      return "TESTS_INCOMPLETE";
+      violations.push("UNSAFE_PR_TRIGGER");
     }
   }
-
-  return null;
 }
 
-function checkTests(body) {
+function checkTests(workflow, violations) {
   if (
-    body.workflow.testsPassed !== true ||
-    body.workflow.matrixComplete !== true ||
-    body.workflow.failFast !== false
+    workflow.testsPassed !== true ||
+    workflow.matrixComplete !== true ||
+    workflow.failFast !== false
   ) {
-    return "TESTS_INCOMPLETE";
+    violations.push("TESTS_INCOMPLETE");
   }
-
-  return null;
 }
 
-function checkActions(workflow) {
+function checkActions(workflow, violations) {
   if (!Array.isArray(workflow.actions)) {
-    return null;
+    violations.push("MUTABLE_ACTION");
+    return;
   }
+
+  const shaRegex = /^[0-9a-f]{40}$/;
 
   for (const action of workflow.actions) {
     if (!isObject(action)) {
-      return "MUTABLE_ACTION";
+      violations.push("MUTABLE_ACTION");
+      continue;
     }
 
     if (
@@ -96,54 +61,45 @@ function checkActions(workflow) {
       typeof action.name !== "string" ||
       typeof action.ref !== "string"
     ) {
-      return "MUTABLE_ACTION";
-    }
-
-    if (action.owner === "actions") {
+      violations.push("MUTABLE_ACTION");
       continue;
     }
 
-    if (!SHA_REGEX.test(action.ref)) {
-      return "MUTABLE_ACTION";
+    if (action.owner !== "actions" && !shaRegex.test(action.ref)) {
+      violations.push("MUTABLE_ACTION");
     }
   }
-
-  return null;
 }
 
-function checkImage(image) {
+function checkImage(image, violations) {
   if (image.multiStage !== true) {
-    return "SINGLE_STAGE_IMAGE";
+    violations.push("SINGLE_STAGE_IMAGE");
   }
 
   if (image.runsAsRoot !== false) {
-    return "ROOT_RUNTIME";
+    violations.push("ROOT_RUNTIME");
   }
 
   if (
     image.secretMode !== "none" &&
     image.secretMode !== "buildkit"
   ) {
-    return "SECRET_IN_LAYER";
+    violations.push("SECRET_IN_LAYER");
   }
 
   if (image.criticalVulnerabilities !== 0) {
-    return "CRITICAL_CVE";
+    violations.push("CRITICAL_CVE");
   }
 
   if (image.digestPinned !== true) {
-    return "UNPINNED_IMAGE";
+    violations.push("UNPINNED_IMAGE");
   }
-
-  return null;
 }
 
-function checkProduction(body) {
+function checkProduction(body, violations) {
   if (body.target !== "production") {
-    return [];
+    return;
   }
-
-  const violations = [];
 
   if (
     body.event !== "push" ||
@@ -155,11 +111,9 @@ function checkProduction(body) {
   if (body.workflow.environmentApproval !== true) {
     violations.push("APPROVAL_REQUIRED");
   }
-
-  return violations;
 }
 
-function validateBasicSchema(body) {
+function validBasicSchema(body) {
   if (!isObject(body)) {
     return false;
   }
@@ -198,6 +152,10 @@ function validateBasicSchema(body) {
     return false;
   }
 
+  if (!Array.isArray(body.workflow.actions)) {
+    return false;
+  }
+
   if (!isObject(body.image)) {
     return false;
   }
@@ -215,79 +173,19 @@ function validateBasicSchema(body) {
   return true;
 }
 
-function evaluate(body) {
-  const violations = [];
-
-  /*
-   * Permissions
-   */
-  const permissionViolation =
-    checkPermissions(body.workflow);
-
-  if (permissionViolation !== null) {
-    violations.push(permissionViolation);
-  }
-
-  /*
-   * Pull request safety
-   */
-  const prViolation =
-    checkPullRequest(body);
-
-  if (prViolation !== null) {
-    violations.push(prViolation);
-  }
-
-  /*
-   * Complete testing
-   *
-   * Tests are required for every release.
-   */
-  const testViolation =
-    checkTests(body);
-
-  if (
-    testViolation !== null &&
-    !violations.includes(testViolation)
-  ) {
-    violations.push(testViolation);
-  }
-
-  /*
-   * Action pinning
-   */
-  const actionViolation =
-    checkActions(body.workflow);
-
-  if (actionViolation !== null) {
-    violations.push(actionViolation);
-  }
-
-  /*
-   * Container hardening
-   */
-  const imageViolation =
-    checkImage(body.image);
-
-  if (imageViolation !== null) {
-    violations.push(imageViolation);
-  }
-
-  /*
-   * Production requirements
-   */
-  const productionViolations =
-    checkProduction(body);
-
-  for (const violation of productionViolations) {
-    violations.push(violation);
-  }
-
-  if (violations.length === 0) {
-    return response("promote", []);
-  }
-
-  return response("block", violations);
+function json(decision, violations) {
+  return new Response(
+    JSON.stringify({
+      decision,
+      violations
+    }),
+    {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json"
+      }
+    }
+  );
 }
 
 export default {
@@ -298,7 +196,7 @@ export default {
       request.method !== "POST" ||
       url.pathname !== "/release-gate"
     ) {
-      return response("block", ["UNSAFE_PR_TRIGGER"]);
+      return json("block", ["TESTS_INCOMPLETE"]);
     }
 
     let body;
@@ -306,17 +204,31 @@ export default {
     try {
       body = await request.json();
     } catch {
-      return response("block", ["TESTS_INCOMPLETE"]);
+      return json("block", ["TESTS_INCOMPLETE"]);
     }
 
-    /*
-     * The supplied task defines only the listed violation codes.
-     * Therefore malformed top-level data is treated as a policy failure.
-     */
-    if (!validateBasicSchema(body)) {
-      return response("block", ["TESTS_INCOMPLETE"]);
+    if (!validBasicSchema(body)) {
+      return json("block", ["TESTS_INCOMPLETE"]);
     }
 
-    return evaluate(body);
+    const violations = [];
+
+    checkPermissions(body.workflow, violations);
+
+    checkPullRequest(body, violations);
+
+    checkTests(body.workflow, violations);
+
+    checkActions(body.workflow, violations);
+
+    checkImage(body.image, violations);
+
+    checkProduction(body, violations);
+
+    if (violations.length === 0) {
+      return json("promote", []);
+    }
+
+    return json("block", violations);
   }
 };
