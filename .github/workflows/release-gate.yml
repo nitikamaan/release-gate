@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: TDS identity: 24f3003527@ds.study.iitm.ac.in
+      - name: "TDS identity: 24f3003527@ds.study.iitm.ac.in"
         run: echo "TDS identity verified"
 
       - name: Checkout
@@ -42,33 +42,33 @@ jobs:
             http://127.0.0.1:8791/release-gate \
             -H "Content-Type: application/json" \
             -d '{
-              "target":"preview",
-              "event":"pull_request",
-              "ref":"refs/pull/123/merge",
-              "workflow":{
-                "trigger":"pull_request",
-                "permissions":{
-                  "contents":"read",
-                  "packages":"write",
-                  "id-token":"none"
+              "target": "preview",
+              "event": "pull_request",
+              "ref": "refs/pull/123/merge",
+              "workflow": {
+                "trigger": "pull_request",
+                "permissions": {
+                  "contents": "read",
+                  "packages": "write",
+                  "id-token": "none"
                 },
-                "testsPassed":true,
-                "matrixComplete":true,
-                "failFast":false,
-                "actions":[
+                "testsPassed": true,
+                "matrixComplete": true,
+                "failFast": false,
+                "actions": [
                   {
-                    "owner":"actions",
-                    "name":"checkout",
-                    "ref":"v4"
+                    "owner": "actions",
+                    "name": "checkout",
+                    "ref": "v4"
                   }
                 ]
               },
-              "image":{
-                "multiStage":true,
-                "runsAsRoot":false,
-                "secretMode":"none",
-                "criticalVulnerabilities":0,
-                "digestPinned":true
+              "image": {
+                "multiStage": true,
+                "runsAsRoot": false,
+                "secretMode": "none",
+                "criticalVulnerabilities": 0,
+                "digestPinned": true
               }
             }')
 
@@ -84,33 +84,33 @@ jobs:
             http://127.0.0.1:8791/release-gate \
             -H "Content-Type: application/json" \
             -d '{
-              "target":"preview",
-              "event":"pull_request",
-              "ref":"refs/pull/123/merge",
-              "workflow":{
-                "trigger":"pull_request",
-                "permissions":{
-                  "contents":"read",
-                  "packages":"write",
-                  "id-token":"none"
+              "target": "preview",
+              "event": "pull_request",
+              "ref": "refs/pull/123/merge",
+              "workflow": {
+                "trigger": "pull_request",
+                "permissions": {
+                  "contents": "read",
+                  "packages": "write",
+                  "id-token": "none"
                 },
-                "testsPassed":true,
-                "matrixComplete":true,
-                "failFast":false,
-                "actions":[
+                "testsPassed": true,
+                "matrixComplete": true,
+                "failFast": false,
+                "actions": [
                   {
-                    "owner":"third-party",
-                    "name":"bad-action",
-                    "ref":"v1"
+                    "owner": "third-party",
+                    "name": "bad-action",
+                    "ref": "v1"
                   }
                 ]
               },
-              "image":{
-                "multiStage":true,
-                "runsAsRoot":false,
-                "secretMode":"none",
-                "criticalVulnerabilities":0,
-                "digestPinned":true
+              "image": {
+                "multiStage": true,
+                "runsAsRoot": false,
+                "secretMode": "none",
+                "criticalVulnerabilities": 0,
+                "digestPinned": true
               }
             }')
 
