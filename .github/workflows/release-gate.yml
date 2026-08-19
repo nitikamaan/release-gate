@@ -31,8 +31,23 @@ jobs:
 
       - name: Start release gate
         run: |
-          npx wrangler dev --port 8791 > worker.log 2>&1 &
-          sleep 5
+          npx wrangler dev --local --port 8791 > worker.log 2>&1 &
+          echo $! > worker.pid
+
+          echo "Waiting for release gate..."
+
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:8791/ > /dev/null 2>&1; then
+              echo "Release gate is ready."
+              exit 0
+            fi
+
+            sleep 1
+          done
+
+          echo "Release gate did not start."
+          cat worker.log
+          exit 1
 
       - name: Test valid preview
         shell: bash
@@ -72,6 +87,7 @@ jobs:
               }
             }')
 
+          echo "Response:"
           echo "$response"
 
           echo "$response" | grep -q '"decision":"promote"'
@@ -114,6 +130,7 @@ jobs:
               }
             }')
 
+          echo "Response:"
           echo "$response"
 
           echo "$response" | grep -q '"MUTABLE_ACTION"'
