@@ -1,0 +1,119 @@
+name: TDS GA7 Release Gate
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+  id-token: none
+
+jobs:
+  release-gate-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: TDS identity: 24f3003527@ds.study.iitm.ac.in
+        run: echo "TDS identity verified"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start release gate
+        run: |
+          npx wrangler dev --port 8791 > worker.log 2>&1 &
+          sleep 5
+
+      - name: Test valid preview
+        shell: bash
+        run: |
+          response=$(curl -s \
+            -X POST \
+            http://127.0.0.1:8791/release-gate \
+            -H "Content-Type: application/json" \
+            -d '{
+              "target":"preview",
+              "event":"pull_request",
+              "ref":"refs/pull/123/merge",
+              "workflow":{
+                "trigger":"pull_request",
+                "permissions":{
+                  "contents":"read",
+                  "packages":"write",
+                  "id-token":"none"
+                },
+                "testsPassed":true,
+                "matrixComplete":true,
+                "failFast":false,
+                "actions":[
+                  {
+                    "owner":"actions",
+                    "name":"checkout",
+                    "ref":"v4"
+                  }
+                ]
+              },
+              "image":{
+                "multiStage":true,
+                "runsAsRoot":false,
+                "secretMode":"none",
+                "criticalVulnerabilities":0,
+                "digestPinned":true
+              }
+            }')
+
+          echo "$response"
+
+          echo "$response" | grep -q '"decision":"promote"'
+
+      - name: Test unsafe action
+        shell: bash
+        run: |
+          response=$(curl -s \
+            -X POST \
+            http://127.0.0.1:8791/release-gate \
+            -H "Content-Type: application/json" \
+            -d '{
+              "target":"preview",
+              "event":"pull_request",
+              "ref":"refs/pull/123/merge",
+              "workflow":{
+                "trigger":"pull_request",
+                "permissions":{
+                  "contents":"read",
+                  "packages":"write",
+                  "id-token":"none"
+                },
+                "testsPassed":true,
+                "matrixComplete":true,
+                "failFast":false,
+                "actions":[
+                  {
+                    "owner":"third-party",
+                    "name":"bad-action",
+                    "ref":"v1"
+                  }
+                ]
+              },
+              "image":{
+                "multiStage":true,
+                "runsAsRoot":false,
+                "secretMode":"none",
+                "criticalVulnerabilities":0,
+                "digestPinned":true
+              }
+            }')
+
+          echo "$response"
+
+          echo "$response" | grep -q '"MUTABLE_ACTION"'
